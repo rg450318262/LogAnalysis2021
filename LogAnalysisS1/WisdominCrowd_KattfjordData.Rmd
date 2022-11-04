@@ -30,7 +30,7 @@ library(mice)
 library(haven)
 library(naniar)
 library(DiagrammeR)#install.packages("DiagrammeR")
-library(foreign)
+library(foreign)# load data
 ```
 
 # 1. Wrangling
