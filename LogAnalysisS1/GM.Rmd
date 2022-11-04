@@ -1,0 +1,145 @@
+---
+title: "Wisdom of Crowds briefing: what we have so far"
+author: "Rong Guang"
+date: '2022-10-26'
+output: 
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      css: [defalut, metropolis, metropolis-fonts]
+      highlightsStyple: arta
+      highlightLines: ture
+      countIncrementalSlides: false
+---
+---
+.center[Kattfjord Survey]
+---
+```{r setup, echo=FALSE, warning = F, message= F}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = F}
+library(tidyverse)
+library(tidyr)
+library(gapminder) # dataset
+library(finalfit)
+library(broom)
+library(gtsummary)#install.packages("gtsummary")
+library(sjlabelled)#install.packages("sjlabelled")
+library(lubridate)#install.packages("lubridate")
+library(sjlabelled)
+library(psych)
+library(Hmisc)
+library(expss)#install.packages("expss")
+library(patchwork)
+library(ggfortify)
+library(DT)
+library(modelsummary)#install.packages("modelsummary")
+library(mice)
+library(haven)
+library(naniar)
+library(DiagrammeR)#install.packages("DiagrammeR")
+
+
+logall <- read_csv("logall.csv")
+logpall <- read_csv("logpall.csv")
+codebook <- read_csv("codebook.csv")
+```
+
+---
+```{r, echo=FALSE, warning = F, message= F}
+datatable(codebook[-1,]) 
+```
+---
+```{r}
+
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+

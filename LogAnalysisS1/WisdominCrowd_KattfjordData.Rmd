@@ -1,0 +1,1166 @@
+---
+title: "Wisdom in Crowd, What we have so far"
+author: "Rong Guang"
+date: '2022-10-24'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = F, warning= F}
+library(tidyverse)
+library(tidyr)
+library(gapminder) # dataset
+library(finalfit)
+library(broom)
+library(gtsummary)#install.packages("gtsummary")
+library(sjlabelled)#install.packages("sjlabelled")
+library(lubridate)#install.packages("lubridate")
+library(sjlabelled)
+library(psych)
+library(Hmisc)
+library(expss)#install.packages("expss")
+library(patchwork)
+library(ggfortify)
+library(DT)
+library(modelsummary)#install.packages("modelsummary")
+library(mice)
+library(haven)
+library(naniar)
+library(DiagrammeR)#install.packages("DiagrammeR")
+library(foreign)
+```
+
+# 1. Wrangling
+
+## 1.1 loading data (the data set has been wranggled already)
+
+```{r, message = F, warning=F}
+log <- read_sav("v1.2_merged_latest_mapped.sav") # raw data, numeric version
+logF <- read.spss("v1.2_merged_latest_mapped.sav", use.value.label=TRUE, to.data.frame=TRUE)# raw data, factor version
+```
+
+## 1.2 Selecting variables
+
+&emsp;&emsp;Due to the sparsity of responses since the item about factor detail. They will not be selected for the current analysis.
+
+```{r}
+#select potential variables for group analysis and consistency analysis
+logpF <- logF %>% 
+  select(1:which(colnames(logF) == "aviprob_dm_7"), -starts_with("EMAIL"), -"email", -starts_with("LOCAT"), -starts_with("DISTR"),  -starts_with("LOG"), -starts_with("GPS"), -starts_with("IPAD"), -starts_with("AVI_E"), -starts_with("USER"), -ResponseId, starts_with("factor_detail"))
+logp <- log %>% 
+  select(1:which(colnames(log) == "aviprob_dm_7"), -starts_with("EMAIL"), -"email", -starts_with("LOCAT"), -starts_with("DISTR"), -starts_with("LOG"), -starts_with("GPS"), -starts_with("IPAD"), -starts_with("AVI_E"), -starts_with("USER"), -ResponseId, starts_with("factor_detail"))
+```
+
+## 1.3 Generating codebook for selected variables
+
+&emsp;&emsp;For efficiency, a searchable codebook is generated here.
+
+```{r}
+#pass variable and level labels into objects
+var_book <- lapply(logp, function(x)var_lab(x)) 
+val_book <- lapply(logp, function(x)get_labels(x))
+val_book <- lapply(val_book, function(x)paste(x, collapse="<>")) 
+
+#unlist them
+all_levels <- unlist(val_book) #convert list into vector
+all_items <- unlist(var_book) #convert list into vector
+
+#combine them to get a note book
+codebook <- data.frame(all_items, all_levels) # generate a codebook which has variable label as a column and 
+
+#data set with two columns, one for variable label and one fore level labels. Searchable and Easy for reading.
+datatable(codebook[-1,]) #
+```
+
+## 1.4 select cases
+
+&emsp;&emsp;Groups (n = 55, skiers = 152) with all members information collected are selected. The final data sets for analysis are named after logpall (mostly numeric) and logall (mostly factor).
+
+```{r}
+logpall <- logp %>% 
+  filter(filter_full_group %in% c("1", "2")& filter_all_group == "1")
+logall <- logpF %>% 
+ filter(filter_full_group %in% c("1", "2")& filter_all_group == "1")
+```
+
+## 1.5 relabel some old variables and generate new variables
+
+```{r}
+# Date variable get relabeled. 
+logall %>% select(Day) %>% datatable()
+logall <- logall %>% 
+  mutate(Day = Day %>% 
+           fct_recode("March 26th" ="\n26-Mar-22                                   ",
+                      "April 3rd"="\n3-Apr-22                                    ",
+                      "April 4th"="\n4-Apr-22                                    ",
+                      "March 26th"="26-Mar-22                                    ",
+                      "March 27th"="\n27-Mar-22                                   ",
+                      "March 28th"="\n28-Mar-22                                   ",
+                      "April 2nd"="\n2-Apr-22                                    ") %>% 
+                              factor())
+
+logall$GN <- gsub(" ", "", logall$GN)
+logall$GN <- as.factor(logall$GN)
+
+# SOCIAL variables get relabeled. 
+logall <- logall %>% 
+  mutate(social_identification = soc_6_1 %>% 
+           fct_recode("1" = "Strongly disagree",
+                      "2" = "Disagree",
+                      "3" = "Neither agree nor disagree",
+                      "4" = "Agree",
+                      "5" = "Strongly agree",
+                      NULL = "Don't know") %>% 
+           as.numeric() %>% 
+           ff_label("Iddentification score"))
+
+logall <- logall %>% 
+  mutate(social_leadership = soc_6_2 %>% 
+           fct_recode("1" = "Strongly disagree",
+                      "2" = "Disagree",
+                      "3" = "Neither agree nor disagree",
+                      "4" = "Agree",
+                      "5" = "Strongly agree",
+                      NULL = "Don't know") %>% 
+           as.numeric()%>% 
+           ff_label("Leadership score"))
+
+logall <- logall %>% 
+  mutate(social_organization = soc_6_5 %>% 
+           fct_recode("1" = "Strongly disagree",
+                      "2" = "Disagree",
+                      "3" = "Neither agree nor disagree",
+                      "4" = "Agree",
+                      "5" = "Strongly agree",
+                      NULL = "Don't know") %>% 
+           as.numeric()%>% 
+           ff_label("Rrganization score"))
+
+logall <- logall %>% 
+  mutate(social_communication = soc_6_6 %>% 
+           fct_recode("1" = "Strongly disagree",
+                      "2" = "Disagree",
+                      "3" = "Neither agree nor disagree",
+                      "4" = "Agree",
+                      "5" = "Strongly agree",
+                      NULL = "Don't know") %>% 
+           as.numeric()%>% 
+           ff_label("Communication score"))
+
+logall <- logall %>% 
+  mutate(social_anomaly = soc_6_3 %>% 
+           fct_recode("5" = "Strongly disagree",
+                      "4" = "Disagree",
+                      "3" = "Neither agree nor disagree",
+                      "2" = "Agree",
+                      "1" = "Strongly agree",
+                      NULL = "Don't know") %>% 
+           as.numeric()%>% 
+           ff_label("Anomaly score"))
+
+logall <- logall %>% 
+  mutate(social_skill = soc_6_4 %>% 
+           fct_recode("5" = "Strongly disagree",
+                      "4" = "Disagree",
+                      "3" = "Neither agree nor disagree",
+                      "2" = "Agree",
+                      "1" = "Strongly agree",
+                      NULL = "Don't know") %>% 
+           as.numeric())%>% 
+           ff_label("Skill score")
+
+# SOCIAL totality is computed
+logall <- logall %>% 
+  mutate(social_totality = rowSums(select(.,starts_with("social_")), na.rm = T) %>% 
+           ff_label("total social scores"))
+
+#Within-group social totality mean is computed (take the average of the add-up of social scores across skiers from one group)
+create_gp_soc_mean <- logall %>% group_by(GN) %>% 
+  summarise(group_social_mean = sum(social_totality)/n())
+logall <- left_join(logall, create_gp_soc_mean, by = "GN")
+median(logall$group_social_mean)
+
+##Within-group social totality mean is dichotomized.
+logall <- logall %>% 
+  mutate(social_binary = case_when(group_social_mean > 29 ~ "high",
+                                   group_social_mean <= 29 ~ "low") %>% 
+           ff_label("the with-in group social totality mean, high or low, cutoff=29"))
+logpall <- logpall %>% 
+  mutate(social_binary = logall$social_binary %>% 
+           ff_label("the with-in group social totality mean, high or low, cutoff=29"))
+
+
+#Cases A7 B13 modify Day of skiing to March 27th (their teammate finished it on 27th)
+logall %>% select(Num,GN, Day) %>% filter (GN %in% c("A7", "B13"))
+logall[logall$Num == "122", "Day"] <- "March 27th"
+logall[logall$Num == "123", "Day"] <- "March 27th"
+```
+
+```{r}
+#inspect the counts for each levels of identified avalanche problems.
+logpall %>% 
+  select(starts_with("aviprob_exp")) %>% sapply(function(x)table(x)) #plan phase
+
+logpall %>% 
+  select(starts_with("aviprob_dm")) %>% sapply(function(x)table(x)) # trip phase
+
+# a new variable about the number of identified ava problems in plan phase is generated
+logpall <- logpall %>% 
+  mutate(aviprob_exp_number = rowSums(select(., starts_with("aviprob_exp"), -starts_with("aviprob_exp_1")) == 1))
+
+# a new variable about the number of identified ava problems in trip phase is generated
+logpall <- logpall %>% 
+  mutate(aviprob_dm_number = rowSums(select(.,starts_with("aviprob_dm"), -starts_with("aviprob_dm_9")) == 1, na.rm = T))
+
+
+###the above analyses were based on logpall (numeric). Pass them into logall (factor). Give them labels.
+logall <- logall %>% mutate(aviprob_exp_number = logpall$aviprob_exp_number %>% 
+                              ff_label("number of ava problems during plan phase"))
+
+logall <- logall %>% mutate(aviprob_dm_number = logpall$aviprob_dm_number %>% 
+                              ff_label("number of ava problems during trip phase"))
+
+```
+
+```{r}
+#Number of factors that detail can be provided is generated/
+logpall <- logpall %>% 
+  mutate(factor_detail_number = rowSums(select(., starts_with("factor_detail"), -factor_detail_4) == 1, na.rm = T))
+logall <- logall %>% mutate(factor_detail_number = logpall$factor_detail_number %>% 
+                              ff_label("the number of factor details can be provided"))
+```
+
+```{r}
+#group number dichotomized.
+##create skier number
+create_skier_number <- logall %>% group_by(GN) %>% 
+  summarise(skier_number = n())
+logall <- left_join(logall, create_skier_number, by = "GN")
+##dichotomized.
+logall <- logall %>% mutate(group_number_size = 
+                              case_when(skier_number>2~"large",
+                                        TRUE~ "small") %>% 
+                              ff_label("size of group large or small cutoff=2"))
+logpall <- logpall %>% mutate(group_number_size = logall$group_number_size %>% 
+                                ff_label("size of group large or small cutoff=2"))
+
+```
+
+
+```{r}
+#generate variables based on Martin's gold problems and gold non-problems
+## gold for Day == "\n26-Mar-22"
+
+logpall_2603 <- logpall %>% filter(Day %in% c("\n26-Mar-22", "26-Mar-22")| Num == "32") %>% 
+  mutate(number_gold_prob = 2 %>% 
+           ff_label("number for Martin's gold problems")) # number of gold problem
+
+logpall_2603 <- logpall_2603 %>% 
+  mutate(number_gold_non_prob = 2 %>% 
+           ff_label("number for Martin's gold non-problems")) # number of gold non-problem
+
+logpall_2603 <- logpall_2603 %>% 
+  mutate(skier_correct_number = rowSums(select(., c("aviprob_dm_3", "aviprob_dm_1")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard")) # number of skier's correct problem
+
+logpall_2603 <- logpall_2603 %>% 
+  mutate(skier_incorrect_number = rowSums(select(., c("aviprob_dm_5", "aviprob_dm_6")), na.rm = T) %>% 
+           ff_label("skier's incorrect identified ava problem against golden standard"))# number of skier's incorrect problem
+
+logpall_2603 <- logpall_2603 %>%
+  mutate(skier_identified_number = aviprob_dm_number) # number of skier's incorrect problem
+logpall_2603 <- logpall_2603 %>% 
+  mutate(skier_possible_number = skier_identified_number - skier_correct_number -skier_incorrect_number) # number of skier's possible problem
+logpall_2603 %>% select(Num, starts_with("skier_")) #inspect
+```
+
+
+```{r}
+#generate variables based on Martin's gold problems and gold non-problems
+#gold for Day == "\n27-Mar-22"
+# for the meaning of each new variable, refer to the last chunk.
+logpall_2703 <- logpall %>% filter(Day == "\n27-Mar-22") %>% 
+  mutate(number_gold_prob = 2 %>% 
+           ff_label("number for Martin's gold problems"))
+
+logpall_2703 <- logpall_2703  %>% 
+  mutate(number_gold_non_prob = 2 %>% 
+           ff_label("number for Martin's gold non-problems"))
+
+logpall_2703 <- logpall_2703  %>% 
+  mutate(skier_correct_number = rowSums(select(., c("aviprob_dm_3", "aviprob_dm_1")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_2703 <- logpall_2703 %>% 
+  mutate(skier_incorrect_number = rowSums(select(., c("aviprob_dm_5", "aviprob_dm_6")), na.rm = T) %>% 
+           ff_label("skier's incorrect identified ava problem against golden standard"))
+
+logpall_2703 <- logpall_2703 %>% mutate(skier_identified_number = aviprob_dm_number)
+logpall_2703 <- logpall_2703 %>% mutate(skier_possible_number = skier_identified_number - skier_correct_number -skier_incorrect_number)
+```
+
+
+```{r}
+#generate variables based on Martin's gold problems and gold non-problems
+#gold for Day == "\n28-Mar-22", 2 problems no result
+# for the meaning of each new variable, refer to the last chunk.
+#routes with 2 ava problems
+logpall_2803_2p <- logpall %>% 
+  filter(Day == "\n28-Mar-22" & (route_skit_2_1 == 1 | route_skit_2_2 == 1 | route_djev_2_1 == 1 | route_djev_2_2 ==1 | route_stor_2_1 == 1 | route_stor_2_2 == 1))# filter the routes with two problems
+
+
+logpall_2803_2p <- logpall_2803_2p %>% 
+  mutate(number_gold_prob = 2 %>% 
+           ff_label("number for Martin's gold problems")) # number of gold problems
+
+logpall_2803_2p <- logpall_2803_2p  %>% 
+  mutate(number_gold_non_prob = 2 %>% 
+           ff_label("number for Martin's gold non-problems"))# number of gold non-problem
+
+logpall_2803_2p <- logpall_2803_2p  %>% 
+  mutate(skier_correct_number = rowSums(select(., c("aviprob_dm_3", "aviprob_dm_1")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))# number of skier's correctly identified problem
+
+logpall_2803_2p <- logpall_2803_2p %>% 
+  mutate(skier_incorrect_number = rowSums(select(., c("aviprob_dm_5", "aviprob_dm_6")), na.rm = T) %>% 
+           ff_label("skier's incorrect identified ava problem against golden standard"))# number of skier's incorrectly identified problem
+
+logpall_2803_2p <- logpall_2803_2p %>% mutate(skier_identified_number = aviprob_dm_number)# number of skier's identified problem
+logpall_2803_2p <- logpall_2803_2p %>% 
+  mutate(skier_possible_number = 
+           skier_identified_number - skier_correct_number -skier_incorrect_number)# number of skier's correctly identified possible problems
+
+
+#gold for Day == "\n28-Mar-22", 2 problems no result
+#routes with 1 ava problems
+# for the meaning of each new variable, refer to the last chunk.
+logpall <- logpall %>% mutate(across(starts_with("route_"), ~replace(.,. == -99, NA)))
+logpall_2803_1p <- logpall %>%  
+  filter(Day == "\n28-Mar-22" & is.na(route_skit_2_1)  & is.na(route_skit_2_2)  & is.na(route_djev_2_1) & is.na(route_djev_2_2)  & is.na(route_stor_2_1)  & is.na(route_stor_2_2))
+
+
+logpall_2803_1p <- logpall_2803_1p %>% 
+  mutate(number_gold_prob = 1 %>% 
+           ff_label("number for Martin's gold problems"))
+
+logpall_2803_1p <- logpall_2803_1p %>% 
+  mutate(number_gold_non_prob = 2 %>% 
+           ff_label("number for Martin's gold non-problems"))
+
+logpall_2803_1p <- logpall_2803_1p  %>% 
+  mutate(skier_correct_number = rowSums(select(., c("aviprob_dm_3")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_2803_1p <- logpall_2803_1p %>% 
+  mutate(skier_incorrect_number = rowSums(select(., c("aviprob_dm_5", "aviprob_dm_6")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_2803_1p <- logpall_2803_1p %>% mutate(skier_identified_number = aviprob_dm_number)
+logpall_2803_1p <- logpall_2803_1p %>% mutate(skier_possible_number = 
+                                                skier_identified_number - skier_correct_number -skier_incorrect_number)
+logpall_2803_1p %>% select(starts_with("skier_"))
+
+logpall_2803 <- rbind(logpall_2803_1p, logpall_2803_2p)
+
+```
+
+
+```{r}
+#generate variables based on Martin's gold problems and gold non-problems
+# gold for Day == "\n2-Apr-22"
+# for the meaning of each new variable, refer to the last chunk.
+logpall_0204 <- logpall %>% filter(Day == "\n2-Apr-22") %>% 
+  mutate(number_gold_prob = 3 %>% 
+           ff_label("number for Martin's gold problems"))
+
+logpall_0204 <- logpall_0204  %>% 
+  mutate(number_gold_non_prob = 2 %>% 
+           ff_label("number for Martin's gold non-problems"))
+
+logpall_0204 <- logpall_0204  %>% 
+  mutate(skier_correct_number = rowSums(select(., c("aviprob_dm_3", "aviprob_dm_1", "aviprob_dm_4")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_0204 <- logpall_0204 %>% 
+  mutate(skier_incorrect_number = rowSums(select(., c("aviprob_dm_7", "aviprob_dm_6")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_0204 <- logpall_0204 %>% mutate(skier_identified_number = aviprob_dm_number)
+logpall_0204 <- logpall_0204 %>% mutate(skier_possible_number = 
+                                          skier_identified_number - skier_correct_number -skier_incorrect_number)
+logpall_0204 %>% select(starts_with("skier_"))
+
+```
+
+```{r}
+#generate variables based on Martin's gold problems and gold non-problems
+#gold for Day == "\n4-Apr-22", 2 problems no result
+# for the meaning of each new variable, refer to the last chunk.
+#routes with 2 ava problems
+logpall_0404_2p <- logpall %>% 
+  filter(Day == "\n4-Apr-22" & (route_skit_2_1 == 1 | route_skit_2_2 == 1 | route_djev_2_1 == 1 | route_djev_2_2 ==1 | route_stor_2_1 == 1 | route_stor_2_2 == 1 | route_stor_4_1 ==1 | route_stor_4_1 == 1))
+#no results
+
+
+#gold for Day == "\n4-Apr-22"
+#routes with 1 ava problems
+# for the meaning of each new variable, refer to the last chunk.
+logpall_0404_1p <- logpall %>%  
+  filter(Day == "\n4-Apr-22" & is.na(route_skit_2_1)  & is.na(route_skit_2_2)  & is.na(route_djev_2_1) & is.na(route_djev_2_2)  & is.na(route_stor_2_1)  & is.na(route_stor_2_2) & is.na(route_stor_4_1) & is.na(route_stor_4_1))
+
+
+logpall_0404_1p <- logpall_0404_1p %>% 
+  mutate(number_gold_prob = 1 %>% 
+           ff_label("number for Martin's gold problems"))
+
+logpall_0404_1p <- logpall_0404_1p %>% 
+  mutate(number_gold_non_prob = 3 %>% 
+           ff_label("number for Martin's gold non-problems"))
+
+logpall_0404_1p <- logpall_0404_1p  %>% 
+  mutate(skier_correct_number = rowSums(select(., c("aviprob_dm_4")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_0404_1p <- logpall_0404_1p %>% 
+  mutate(skier_incorrect_number = 
+           rowSums(select(., c("aviprob_dm_1", "aviprob_dm_2", "aviprob_dm_6")), na.rm = T) %>% 
+           ff_label("skier's correct identified ava problem against golden standard"))
+
+logpall_0404_1p <- logpall_0404_1p %>% mutate(skier_identified_number = aviprob_dm_number)
+logpall_0404 <- logpall_0404_1p %>% mutate(skier_possible_number = skier_identified_number - skier_correct_number -skier_incorrect_number)
+```
+
+
+```{r}
+#combine the data sets above and pass them into logall
+logpall_gold <- rbind(logpall_2603, logpall_2703, logpall_2803, logpall_0204, logpall_0404) 
+logpall_gold <- logpall_gold %>% select(Num, starts_with("skier_"), contains("_gold_"))
+logall <- left_join(logall, logpall_gold, by = "Num")
+
+```
+
+
+```{r}
+logall <- logall %>% 
+  mutate(TrueProbRate = skier_correct_number/number_gold_prob,  # generate Variable True Problem Rate
+         FalseProbRate = skier_incorrect_number/number_gold_non_prob, # generate variable False Problem Rate
+         Uncertainty = sqrt(1-(skier_identified_number/number_gold_prob)^2), # generate variable Uncertainty
+         TrueConfidenceRate = TrueProbRate/Uncertainty, #generate variable True Confidence Rate
+         UncertaintyP = 
+           sqrt(1-(skier_identified_number - skier_possible_number)/number_gold_prob)^2) # generate variable Uncertainty (updated version)
+
+```
+
+# 2. analysis
+
+## 2.1 number of skiers in each group
+
+```{r,  fig.height=6, fig.width=10}
+#number of skiers in each group by day
+logall %>% 
+  ggplot(aes(x = GN)) +
+  geom_bar(width = 1, fill = "grey", color = "black") +
+  facet_wrap(~Day, scales = "free") +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8))
+
+```
+
+
+```{r,  fig.height=4, fig.width=7}
+#distribution of skiers in each group 
+groupsize <- logall %>% group_by(GN) %>% 
+
+  summarise(number = n()) 
+groupsize$number <- as.factor(groupsize$number)
+groupsizedist <- groupsize %>% group_by(number) %>% 
+  summarise(n = n())
+groupsizedist
+groupsizedist %>% ggplot(aes(x= factor(number), y = n)) +
+  geom_col(fill = "grey", color = "black")+
+  labs(y = "Count of Groups", x = "Group Size (person)", title = "Distribution of Group Size") +
+  geom_text(aes(label = n), size = 5, vjust = -0.5) +
+  ylim(0, 35) +
+  theme_bw() +
+  theme (plot.title = element_text(size = 15, face = "bold"), axis.title = element_text(size = 15) )
+
+
+```
+
+```{r}
+## The group size of each group by mountain triped over and date of trip
+logall <- logall %>% mutate(mountain_1 = mountain_1 %>% fct_recode("Skittentind" = "Skittentind",
+                                                                   "Djeveltanna" = "2",
+                                                                   "Stortsteinnestind +8848" = "3"))
+groupsize <- logall %>% group_by(GN) %>% 
+  summarise(Day = Day, ountain = mountain_1, number = n()) 
+groupsize
+groupsize %>% ggplot(aes(x=GN)) +
+  geom_bar()+
+  facet_grid(ountain~Day, scale ="free") +
+  theme(axis.text.x =element_text(size = 4))
+```
+
+
+## 2.2 skills (ski and avalanche forecast skills)
+
+### 2.2.1 distribution of skills within and across groups
+
+```{r, fig.height=9, fig.width=9}
+# heatmap for forecast skill within and across groups
+library(janitor)#install.packages("janitor")
+heatmap_forecast <- logall %>% group_by(GN) %>% 
+  mutate(MemeberID = row_number()) %>% ungroup()
+
+heatmap_forecast <- heatmap_forecast %>% select(GN, MemeberID, skill_avi_numeric)
+
+p1 <- ggplot(heatmap_forecast, aes(MemeberID, GN)) +
+    geom_tile(aes(fill = skill_avi_numeric), colour = "black") +
+    scale_fill_gradient(low = "white",high = "steelblue")+
+  labs(y = "Group No.", x = "Group Member", title = "Forecast skill distribution within/across groups") +
+  guides(fill=guide_legend(title="Forecast \nskill"))+ geom_text(aes(label = skill_avi_numeric), size = 3, 
+            vjust = 0.5, color = "black")+
+ theme(axis.title = element_text(size = 18), 
+        plot.title = element_text(size = 20, face = "bold"))
+```
+
+```{r, fig.height=9, fig.width=9}
+# heatmap for ski skill within and across groups
+heatmap_ski <- logall %>% group_by(GN) %>% 
+  mutate(MemeberID = row_number()) %>% ungroup()
+
+heatmap_ski <- heatmap_ski %>% select(GN, MemeberID, skill_ski_numeric)
+
+p2 <- ggplot(heatmap_ski, aes(MemeberID, GN)) +
+    geom_tile(aes(fill = skill_ski_numeric), colour = "black") +
+    scale_fill_gradient(low = "white",high = "darkred")+
+  labs(y = "Group No.", x = "Group Member", 
+       title = "Ski skill distribution within/across groups") +
+  guides(fill=guide_legend(title="Ski \nskill"))+
+  geom_text(aes(label = skill_ski_numeric), size = 3, vjust = 0.5, color = "black") +
+  theme(axis.title = element_text(size = 18), 
+        plot.title = element_text(size = 20, face = "bold"))
+```
+
+```{r,fig.height=9, fig.width=18}
+
+p1+p2
+
+```
+
+### 2.2.2 trends of skills within case towards each other
+
+```{r,fig.height=5, fig.width=9}
+# trend group for forecast two types of skill towards each other
+trend_a <- logall %>% select (No, skill_ski_numeric, skill_avi_numeric)
+trend_b <- logall %>% count(skill_ski_numeric, skill_avi_numeric)
+trend_graph <- full_join(trend_a, trend_b, by = c("skill_ski_numeric", "skill_avi_numeric"))
+
+p3 <- trend_graph %>% 
+  pivot_longer(c(2,3), names_to = "skiORforecast", values_to = "level") %>% 
+  mutate(skiORforecast = skiORforecast %>% fct_recode("SkiSkill" ="skill_ski_numeric",
+                                                      "ForecastSkill" = "skill_avi_numeric")) %>% 
+  ggplot(aes(x = skiORforecast, y = level, color =skiORforecast))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 18, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of ski and forecast skill for each individual")
+```
+
+
+```{r,fig.height=10, fig.width=9}
+# density graph for two types of skills
+library(ggpubr)#install.packages("ggpubr")
+p4 <- trend_graph %>% pivot_longer(c(2,3), names_to = "skiORforecast", values_to = "level") %>% 
+  ggplot(aes(x = level, fill = skiORforecast))+
+  geom_histogram(binwidth = 1.2) +
+  facet_wrap(~skiORforecast)
+density_graph <-  trend_graph %>% select (2:3)%>% 
+  pivot_longer(everything(), names_to = "skiORforecast", values_to = "level") %>% 
+  mutate(skiORforecast = skiORforecast %>% fct_recode("SkiSkill" ="skill_ski_numeric",
+                                                      "ForecastSkill" = "skill_avi_numeric")) 
+#above 8 lines are temporarily discarded
+p5 <- ggdensity(density_graph, x = "level", color = "skiORforecast", add = "mean", rug = T, fill = "skiORforecast")
+p3/p5
+```
+
+## 2.3 SOCIAL score distribution for each item
+
+```{r}
+#ridge graph for each SOCIAL item
+library(ggridges)#install.packages("ggridges")
+
+social_long <- logall %>% select(No, GN, starts_with("social")) %>% 
+  pivot_longer(c(3:8), names_to = "items", values_to = "scores")
+p6.x <- ggdensity(social_long, x = "scores", color = "items", add = "mean", rug = T, fill = "items")
+p6 <- social_long %>% ggplot(aes(x = scores, y = factor(items))) +
+  geom_density_ridges(aes(fill = items)) +
+  theme(legend.position = "bottom", axis.title.y = element_blank(), 
+        axis.text.y = element_blank())
+```
+
+
+```{r}
+#barplot with dots for each SOCIAL item
+p7 <- social_long %>% ggplot(aes(x=items, y= scores, color = items)) +
+  geom_boxplot() +
+  geom_jitter(size = 0.8, alpha = 0.5) +
+  theme(legend.position = "none", 
+        axis.text.x = element_text(angle = 10, size = 12), 
+        axis.title =element_blank())
+```
+
+
+```{r,fig.height=10, fig.width=7}
+p6/p7
+```
+
+### 2.4 Number of identified ava problems (plan vs trip phases)
+
+```{r}
+#Relation of number of identified ava problem \nplan and trip phase for each individual
+trend_c <- logall %>% select (No, aviprob_exp_number, aviprob_dm_number)
+trend_d <- logall %>% count(aviprob_exp_number, aviprob_dm_number)
+trend_graph_prob <- full_join(trend_c, trend_d, by = c("aviprob_exp_number", "aviprob_dm_number"))
+
+p8 <- trend_graph_prob %>% 
+  pivot_longer(c(2,3), names_to = "phase", values_to = "number") %>% 
+  mutate(phase = phase %>% fct_recode("PlanPhase" ="aviprob_exp_number",
+                                                      "TripPhase" = "aviprob_dm_number")) %>% 
+  ggplot(aes(x = phase, y = number, color =phase))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 12, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of number of identified ava problem \nplan and trip phase for each individual",
+       y = "Number of problems")
+
+```
+
+
+```{r}
+#Relation of number of identified ava problems durig  plan and trip phases for expert forecaster
+#expert forecasters
+skill_3l <- logall %>% select(No, skill_avi_3l, skill_ski_3l)
+trend_graph_prob_skill <- left_join(trend_graph_prob, skill_3l, by = "No")
+
+p8.1 <- trend_graph_prob_skill %>% filter(skill_avi_3l == 3) %>% 
+  pivot_longer(c(2,3), names_to = "phase", values_to = "number") %>% 
+  mutate(phase = phase %>% fct_recode("PlanPhase" ="aviprob_exp_number",
+                                                      "TripPhase" = "aviprob_dm_number")) %>% 
+  ggplot(aes(x = factor(phase, level = c("PlanPhase","TripPhase")), y = number, color =phase))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 10, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of number of identified ava problems durig \nplan and trip phases for expert forecaster",
+       y = "Number of problems")
+
+```
+
+```{r}
+#Relation of number of identified ava problems during plan and trip phases for expert skiers
+#expert skiers
+p8.2 <- trend_graph_prob_skill %>% filter(skill_ski_3l == 3) %>% 
+  pivot_longer(c(2,3), names_to = "phase", values_to = "number") %>% 
+  mutate(phase = phase %>% fct_recode("PlanPhase" ="aviprob_exp_number",
+                                                      "TripPhase" = "aviprob_dm_number")) %>% 
+  ggplot(aes(x = factor(phase, level = c("PlanPhase","TripPhase")), y = number, color =phase))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 10, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of number of identified ava problems during \nplan and trip phases for expert skiers",
+       y = "Number of problems")
+```
+
+
+```{r}
+#Relation of number of identified ava problems during plan and trip phases for novice forecaster
+#novice forecasters
+p8.3 <- trend_graph_prob_skill %>% filter(skill_avi_3l == 1) %>% 
+  pivot_longer(c(2,3), names_to = "phase", values_to = "number") %>% 
+  mutate(phase = phase %>% fct_recode("PlanPhase" ="aviprob_exp_number",
+                                                      "TripPhase" = "aviprob_dm_number")) %>% 
+  ggplot(aes(x = factor(phase, level = c("PlanPhase","TripPhase")), y = number, color =phase))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 10, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of number of identified ava problems during \nplan and trip phases for novice forecaster",
+       y = "Number of problems")
+```
+
+
+```{r}
+#elation of number of identified ava problems during plan and trip phases for novice skiers
+#novice skiers
+p8.4 <- trend_graph_prob_skill %>% filter(skill_ski_3l == 1) %>% 
+  pivot_longer(c(2,3), names_to = "phase", values_to = "number") %>% 
+  mutate(phase = phase %>% fct_recode("PlanPhase" ="aviprob_exp_number",
+                                                      "TripPhase" = "aviprob_dm_number")) %>% 
+  ggplot(aes(x = factor(phase, level = c("PlanPhase","TripPhase")), y = number, color =phase))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 10, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of number of identified ava problems during \nplan and trip phases for novice skiers",
+       y = "Number of problems")
+```
+
+
+```{r}
+#Relation of number of identified ava problems during plan and trip phases for moderate skiers
+#moderate skiers
+p8.5 <- trend_graph_prob_skill %>% filter(skill_avi_3l == 2) %>% 
+  pivot_longer(c(2,3), names_to = "phase", values_to = "number") %>% 
+  mutate(phase = phase %>% fct_recode("PlanPhase" ="aviprob_exp_number",
+                                                      "TripPhase" = "aviprob_dm_number")) %>% 
+  ggplot(aes(x = factor(phase, level = c("PlanPhase","TripPhase")), y = number, color =phase))+
+  geom_line(aes(group = No,size = n), color = "black")+
+  geom_point(shape = 19, size = 6) +
+  theme(axis.text = element_text(size = 15), 
+        axis.title = element_text(size = 18), 
+        axis.title.x = element_blank(),
+        plot.title = element_text(size = 10, face ="bold"), legend.position = "none") +
+  labs(title = "Relation of number of identified ava problems during \nplan and trip phases for moderate skiers",
+       y = "Number of problems")
+
+p8.5
+```
+
+```{r,fig.height=6, fig.width=10}
+p8.1/p8.3|p8.2/p8.4
+```
+
+## 2.5 Intra-case correlatiion (plan vs trip phases)
+
+&emsp;&emsp;pFore each ava problem, kappa test is performed for expert and novice, separately. Finally, the kappa effect size for each ava problem will be added up to compare across phases.
+
+```{r}
+library(irr)#install.packages("irr")
+#kappa
+#new snow loose expert
+kappa_prob_newsnowloose <- logpall %>% select(No, aviprob_exp_3, aviprob_dm_1, skill_avi_3l)
+kappa1 <- kappa_prob_newsnowloose %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa1$value
+
+#new snow loose novice
+kappa1.5 <- kappa_prob_newsnowloose %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa1.5$value
+```
+
+```{r}
+#kappa
+#new snow slab expert
+kappa_prob_newsnowslab <- logpall %>% select(No, aviprob_exp_4, aviprob_dm_2, skill_avi_3l)
+kappa2 <- kappa_prob_newsnowslab %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa2$value
+
+#new snow slab novice
+kappa2.5 <- kappa_prob_newsnowslab %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa2.5$value
+```
+
+
+```{r}
+#kappa
+#wind drifted expert
+kappa_prob_wind <- logpall %>% select(No, aviprob_exp_5, aviprob_dm_3, skill_avi_3l)
+kappa3 <- kappa_prob_wind %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa3$value
+
+#wind drifted novice
+kappa3.5 <- kappa_prob_wind %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa3.5$value
+```
+
+
+```{r}
+#kappa
+#persistent weak layer expert
+kappa_prob_pwl <- logpall %>% select(No, aviprob_exp_6, aviprob_dm_4, skill_avi_3l)
+kappa4 <- kappa_prob_pwl %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa4$value
+
+#persistent weak layer novice
+kappa4.5 <- kappa_prob_pwl %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa4.5$value
+```
+
+
+```{r}
+#kappa
+#wet snow loose
+kappa_prob_wetloose <- logpall %>% select(No, aviprob_exp_7, aviprob_dm_5, skill_avi_3l)
+kappa5 <- kappa_prob_wetloose %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa5$value
+
+#wet snow novice
+kappa5.5 <- kappa_prob_wetloose %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa5.5$value
+```
+
+
+```{r}
+#kappa
+#wet snow slab expert
+kappa_prob_wetslab <- logpall %>% select(No, aviprob_exp_8, aviprob_dm_6, skill_avi_3l)
+kappa6 <- kappa_prob_wetslab %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa6$value
+
+#wet snow slab novice
+kappa6.5 <- kappa_prob_wetslab %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa6.5$value
+```
+
+
+```{r}
+#kappa
+#gliding snow expert
+kappa_prob_wetslab <- logpall %>% select(No, aviprob_exp_9, aviprob_dm_7, skill_avi_3l)
+kappa7 <- kappa_prob_wetslab %>% filter(skill_avi_3l == 3) %>% select(2:3) %>% kappam.fleiss()
+kappa7$value
+
+#gliding snow novice
+kappa7.5 <- kappa_prob_wetslab %>% filter(skill_avi_3l == 1) %>% select(2:3) %>% kappam.fleiss()
+kappa7.5$value
+```
+
+
+```{r}
+#calculate the root mean square of them
+#experts' average consistency 
+sqrt(mean(kappa1$value^2, kappa2$value^2, kappa3$value^2, kappa4$value^2, kappa5$value^2, kappa6$value^2, kappa7$value^2))
+#novice' average consistency 
+sqrt(mean(kappa1.5$value^2, kappa2.5$value^2, kappa3.5$value^2, kappa4.5$value^2, kappa5.5$value^2, kappa6.5$value^2, kappa7.5$value^2))
+```
+
+## 2.6 avalanche factor analysis
+
+&emsp;&emsp;Number of factors that details can be provided among expertise levels. 
+
+```{r}
+logall %>% filter(!is.na(factor_detail_number)&!is.na(skill_avi_3l)) %>% 
+  ggplot(aes(x = factor(skill_avi_3l), y = factor_detail_number)) +
+  geom_boxplot()
+```
+
+&emsp;&emsI found the data is really sparse. No analysis base on ava factors will be carried out in this analysis.
+
+## 2.7 Intra-case correlatiion (small vs large group)
+
+&emsp;&emsp;Fore each ava problem, kappa test is performed for small and large groups, separately. Finally, the kappa effect size for each ava problem will be added up to compare across size of groups
+
+```{r}
+library(irr)
+#kappa
+#new snow loose by large group
+kappa_prob_newsnowloose <- logpall %>% select(No, aviprob_exp_3, aviprob_dm_1, group_number_size)
+kappa1 <- kappa_prob_newsnowloose %>% filter(group_number_size == "large") %>% 
+  select(2:3) %>% kappam.fleiss()
+kappa1$value
+
+#new snow loose by small group
+kappa1.5 <- kappa_prob_newsnowloose %>% filter(group_number_size == "small")%>% 
+  select(2:3) %>% kappam.fleiss()
+kappa1.5$value
+```
+
+
+```{r}
+#kappa
+#new snow slab by large group
+kappa_prob_newsnowslab <- logpall %>% select(No, aviprob_exp_4, aviprob_dm_2, group_number_size)
+kappa2 <- kappa_prob_newsnowslab %>% filter(group_number_size == "large") %>% select(2:3) %>% kappam.fleiss()
+kappa2$value
+
+#new snow slab by small group 
+kappa2.5 <- kappa_prob_newsnowslab %>% filter(group_number_size == "small") %>% select(2:3) %>% kappam.fleiss()
+kappa2.5$value
+```
+
+
+```{r}
+#kappa
+#wind drifted  by large group
+kappa_prob_wind <- logpall %>% select(No, aviprob_exp_5, aviprob_dm_3, group_number_size)
+kappa3 <- kappa_prob_wind %>% filter(group_number_size == "large") %>% select(2:3) %>% kappam.fleiss()
+kappa3$value
+
+#wind drifted by small group
+kappa3.5 <- kappa_prob_wind %>% filter(group_number_size == "small") %>% select(2:3) %>% kappam.fleiss()
+kappa3.5$value
+```
+
+
+```{r}
+#kappa
+#persistent weak layer by large group
+kappa_prob_pwl <- logpall %>% select(No, aviprob_exp_6, aviprob_dm_4, group_number_size)
+kappa4 <- kappa_prob_pwl %>% filter(group_number_size == "large") %>% select(2:3) %>% kappam.fleiss()
+kappa4$value
+
+#persistent weak layer by small group
+kappa4.5 <- kappa_prob_pwl %>% filter(group_number_size == "small") %>% select(2:3) %>% kappam.fleiss()
+kappa4.5$value
+```
+
+
+```{r}
+#kappa
+#wet snow loose by large group
+kappa_prob_wetloose <- logpall %>% select(No, aviprob_exp_7, aviprob_dm_5, group_number_size)
+kappa5 <- kappa_prob_wetloose %>% filter(group_number_size == "large") %>% select(2:3) %>% kappam.fleiss()
+kappa5$value
+
+#wet snow by small group
+kappa5.5 <- kappa_prob_wetloose %>% filter(group_number_size == "small") %>% select(2:3) %>% kappam.fleiss()
+kappa5.5$value
+```
+
+
+```{r}
+#kappa
+#wet snow slab by large group
+kappa_prob_wetslab <- logpall %>% select(No, aviprob_exp_8, aviprob_dm_6, group_number_size)
+kappa6 <- kappa_prob_wetslab %>% filter(group_number_size == "large") %>% select(2:3) %>% kappam.fleiss()
+kappa6$value
+
+#wet snow slab by small group
+kappa6.5 <- kappa_prob_wetslab %>% filter(group_number_size == "small") %>% select(2:3) %>% kappam.fleiss()
+kappa6.5$value
+```
+
+
+```{r}
+#kappa
+#gliding snow by large group
+kappa_prob_wetslab <- logpall %>% select(No, aviprob_exp_9, aviprob_dm_7, group_number_size)
+kappa7 <- kappa_prob_wetslab %>% filter(group_number_size == "large") %>% select(2:3) %>% kappam.fleiss()
+kappa7$value
+
+#gliding snow by small group
+kappa7.5 <- kappa_prob_wetslab %>% filter(group_number_size == "small") %>% select(2:3) %>% kappam.fleiss()
+kappa7.5$value
+```
+
+
+```{r}
+#aggregate large group kapp effect size
+sqrt(mean(kappa1$value^2, kappa2$value^2, kappa3$value^2, kappa4$value^2, kappa5$value^2, kappa6$value^2, kappa7$value^2))
+#aggregate small group kapp effect size
+sqrt(mean(kappa1.5$value^2, kappa2.5$value^2, kappa3.5$value^2, kappa4.5$value^2, kappa5.5$value^2, kappa6.5$value^2, kappa7.5$value^2))
+```
+
+## 2.8 Intra-case correlatiion (low vs high SOCIAL group)
+
+&emsp;&emsp;Fore each ava problem, kappa test is performed for low and high social groups, separately. Finally, the kappa effect size for each ava problem will be added up to compare across these groups.
+
+```{r}
+#distribution of SOCIAL
+logall %>% ggplot(aes(x = social_totality)) +
+  geom_histogram() +
+  facet_wrap(~social_binary)
+```
+
+
+```{r}
+library(irr)
+#kappa
+#new snow loose by high SOCIAL group
+kappa_prob_newsnowloose <- logpall %>% select(No, aviprob_exp_3, aviprob_dm_1, social_binary)
+kappa1 <- kappa_prob_newsnowloose %>% filter(social_binary == "high") %>% 
+  select(2:3) %>% kappam.fleiss()
+kappa1$value
+
+#new snow loose by low SOCIAL group
+kappa1.5 <- kappa_prob_newsnowloose %>% filter(social_binary == "low")%>% 
+  select(2:3) %>% kappam.fleiss()
+kappa1.5$value
+```
+
+
+```{r}
+#kappa
+#new snow slab by high SOCIAL group
+kappa_prob_newsnowslab <- logpall %>% select(No, aviprob_exp_4, aviprob_dm_2, social_binary)
+kappa2 <- kappa_prob_newsnowslab %>% filter(social_binary == "high") %>% select(2:3) %>% kappam.fleiss()
+kappa2$value
+
+#new snow slab by low SOCIAL group
+kappa2.5 <- kappa_prob_newsnowslab %>% filter(social_binary == "low") %>% select(2:3) %>% kappam.fleiss()
+kappa2.5$value
+```
+
+
+```{r}
+#kappa
+#wind drifted by high SOCIAL group
+kappa_prob_wind <- logpall %>% select(No, aviprob_exp_5, aviprob_dm_3, social_binary)
+kappa3 <- kappa_prob_wind %>% filter(social_binary == "high") %>% select(2:3) %>% kappam.fleiss()
+kappa3$value
+
+#wind drifted by low SOCIAL group
+kappa3.5 <- kappa_prob_wind %>% filter(social_binary == "low") %>% select(2:3) %>% kappam.fleiss()
+kappa3.5$value
+```
+
+
+```{r}
+#kappa
+#persistent weak layer by high SOCIAL group
+kappa_prob_pwl <- logpall %>% select(No, aviprob_exp_6, aviprob_dm_4, social_binary)
+kappa4 <- kappa_prob_pwl %>% filter(social_binary == "high") %>% select(2:3) %>% kappam.fleiss()
+kappa4$value
+
+#persistent weak layer by low SOCIAL group
+kappa4.5 <- kappa_prob_pwl %>% filter(social_binary == "low") %>% select(2:3) %>% kappam.fleiss()
+kappa4.5$value
+```
+
+
+```{r}
+#kappa
+#wet snow loose by high SOCIAL group
+kappa_prob_wetloose <- logpall %>% select(No, aviprob_exp_7, aviprob_dm_5, social_binary)
+kappa5 <- kappa_prob_wetloose %>% filter(social_binary == "high") %>% select(2:3) %>% kappam.fleiss()
+kappa5$value
+
+#wet snow novice by low SOCIAL group
+kappa5.5 <- kappa_prob_wetloose %>% filter(social_binary == "low") %>% select(2:3) %>% kappam.fleiss()
+kappa5.5$value
+```
+
+
+```{r}
+#kappa
+#wet snow slab by high SOCIAL group
+kappa_prob_wetslab <- logpall %>% select(No, aviprob_exp_8, aviprob_dm_6, social_binary)
+kappa6 <- kappa_prob_wetslab %>% filter(social_binary == "high") %>% select(2:3) %>% kappam.fleiss()
+kappa6$value
+
+#wet snow slab by low SOCIAL group
+kappa6.5 <- kappa_prob_wetslab %>% filter(social_binary == "low") %>% select(2:3) %>% kappam.fleiss()
+kappa6.5$value
+```
+
+
+```{r}
+#kappa
+#gliding snow expert by high SOCIAL group
+kappa_prob_wetslab <- logpall %>% select(No, aviprob_exp_9, aviprob_dm_7, social_binary)
+kappa7 <- kappa_prob_wetslab %>% filter(social_binary == "high") %>% select(2:3) %>% kappam.fleiss()
+kappa7$value
+
+#gliding snow by low SOCIAL group
+kappa7.5 <- kappa_prob_wetslab %>% filter(social_binary == "low") %>% select(2:3) %>% kappam.fleiss()
+kappa7.5$value
+```
+
+
+```{r}
+#aggregate the kappa effect size for groups of either size, respectively
+#high social 
+sqrt(mean(kappa1$value^2, kappa2$value^2, kappa3$value^2, kappa4$value^2, kappa5$value^2, kappa6$value^2, kappa7$value^2))
+#low social
+sqrt(mean(kappa1.5$value^2, kappa2.5$value^2, kappa3.5$value^2, kappa4.5$value^2, kappa5.5$value^2, kappa6.5$value^2, kappa7.5$value^2))
+```
+
+
+## 2.9 Gold problem analysis
+
+&emsp;&emsp;Gold problem indicators include True Condidence Rate, True Problem Rate, False Problem Rate, Uncertainy and Uncertainty(updated).
+```{r, include = F}
+#Gold problem indicators between expertise levels
+kruskal.test(TrueConfidenceRate ~ skill_avi_3l, data = logall)
+kruskal.test(Uncertainty ~ skill_avi_3l, data = logall)
+kruskal.test(FalseProbRate ~ skill_avi_3l, data = logall)
+kruskal.test(TrueProbRate ~ skill_avi_3l, data = logall)
+kruskal.test(UncertaintyP ~ skill_avi_3l, data = logall)
+#Gold problem indicators between group size
+kruskal.test(TrueConfidenceRate ~ group_number_size, data = logall)
+kruskal.test(Uncertainty ~ group_number_size, data = logall)
+kruskal.test(FalseProbRate ~ group_number_size, data = logall)
+kruskal.test(TrueProbRate ~ group_number_size, data = logall)
+kruskal.test(UncertaintyP ~ group_number_size, data = logall)
+##Gold problem indicators between SOCIAL scores
+kruskal.test(TrueConfidenceRate ~ social_binary, data = logall)
+kruskal.test(Uncertainty ~ social_binary, data = logall)
+kruskal.test(FalseProbRate ~ social_binary, data = logall)
+kruskal.test(TrueProbRate ~ social_binary, data = logall)
+kruskal.test(UncertaintyP ~ social_binary, data = logall)
+```
+
+```{r}
+#Gold problem indicators between expertise levels, group sizes and SOCIAL scores.
+logall %>%  
+  summary_factorlist(dependent = "UncertaintyP", 
+                     explanatory = c("social_binary", "group_number_size", "skill_avi_3l"), 
+                     
+                     p = T) %>% datatable()
+?summary_factorlist
+```
+
+```{r}
+#The distribution of each gold problem indicators
+p21 <- logall %>% filter(!is.na(skill_avi)) %>% ggplot(aes(x = skill_avi, y = TrueConfidenceRate)) +
+  geom_boxplot() +
+  geom_jitter(size = 0.5)+
+  theme(axis.text.x = element_text(angle = 15, size = 6), axis.title.x = element_blank())
+p22<- logall %>% filter(!is.na(skill_avi)) %>% ggplot(aes(x = skill_avi, y = FalseProbRate)) +
+  geom_boxplot() +
+  geom_jitter(size = 0.5)+
+  theme(axis.text.x = element_text(angle = 15, size = 6), axis.title.x = element_blank())
+p23<- logall %>% filter(!is.na(skill_avi)) %>% ggplot(aes(x = skill_avi, y = Uncertainty)) +
+  geom_boxplot() +
+  geom_jitter(size = 0.5)+
+  theme(axis.text.x = element_text(angle = 15, size = 6), axis.title.x = element_blank())
+
+p24 <- logall %>% filter(!is.na(skill_avi)) %>% ggplot(aes(x = skill_avi, y = UncertaintyP)) +
+  geom_boxplot() +
+  geom_jitter(size = 0.5)+
+  theme(axis.text.x = element_text(angle = 15, size = 6), axis.title.x = element_blank())
+
+p21/p22|p23/p24
+```
+
+
+
+```{r}
+#Modeling UcertaintyP
+a <- logall %>% 
+  lm(UncertaintyP ~ skill_avi_numeric+social_totality+group_number_size, data = .)
+a %>% summary() 
+```
+
+```{r}
+#Modeling UcertaintyP
+a <- logall %>% 
+  lm(UncertaintyP ~ skill_avi_numeric+social_totality+group_number_size + sex + age + g_leader, data = .)
+a %>% summary() 
+
+a <- logall %>% 
+  lm(skill_avi_numeric ~ sex+age+bc_years_4+ area_days, data=. ) 
+
+a %>% summary()
+```
+
+
+
